@@ -7,6 +7,9 @@ Created on Wed Aug 20 15:13:40 2025
 """
 
 import pandas as pd
+import matplotlib.pyplot as plt
+import seaborn as sns
+import numpy as np
 
 # %% Limpieza
 
@@ -66,105 +69,13 @@ df_long = df.melt(
 df_long[['Año', 'Resultado']] = df_long['Periodo'].str.split("_", expand=True)
 
 # === 3. Filtrar solo filas con "SI" (es decir, cuando ocurrió el evento) ===
-df_long = df_long[df_long['Valor'].str.upper() == "SI"]
-
-# === 4. Agrupar y contar alumnos por asignatura, año y resultado ===
-df_resumen = (
-    df_long.groupby(['Actividad_Cod', 'Actividad_Nombre', 'Año', 'Resultado'])
-    .size()
-    .reset_index(name="Cantidad")
-)
-
-# Ordenar años para que quede más prolijo
-df_resumen['Año'] = df_resumen['Año'].astype(int)
-df_resumen = df_resumen.sort_values(['Actividad_Cod', 'Año', 'Resultado'])
-
-# === 5. (Opcional) Pivotear para tener una tabla Año vs. Resultados ===
-df_pivot = df_resumen.pivot_table(
-    index=['Actividad_Cod', 'Actividad_Nombre', 'Año'],
-    columns='Resultado',
-    values='Cantidad',
-    fill_value=0
-).reset_index()
-
-# %% Análisis de resultado por materia de 2017 a 2024
-
-import matplotlib.pyplot as plt
-import seaborn as sns
-
-# Pasamos a formato largo
-df_plot_long = df_pivot.melt(
-    id_vars=['Actividad_Cod', 'Actividad_Nombre', 'Año'],
-    value_vars=['Aprobado', 'Reprobado', 'Promovido', 'Ausente'],
-    var_name="Resultado",
-    value_name="Cantidad"
-)
-
-# Calcular totales por año y materia
-totales = df_plot_long.groupby(['Actividad_Cod', 'Año'])['Cantidad'].sum().reset_index(name='Total')
-
-# Unir los totales al dataset largo
-df_plot_long = df_plot_long.merge(totales, on=['Actividad_Cod', 'Año'])
-
-# Calcular porcentaje
-df_plot_long['Porcentaje'] = (df_plot_long['Cantidad'] / df_plot_long['Total']) * 100
-
-# Lista de materias
-materias = df_plot_long['Actividad_Cod'].unique()
-
-# Colores fijos para los resultados
-palette = {
-    "Aprobado": "green",
-    "Reprobado": "red",
-    "Promovido": "blue",
-    "Ausente": "gray"
-}
-
-for cod in materias:
-    df_mat = df_plot_long[df_plot_long['Actividad_Cod'] == cod]
-
-    fig, ax1 = plt.subplots(figsize=(9,5))
-
-    # === Eje Y1: porcentajes ===
-    sns.lineplot(
-        data=df_mat,
-        x="Año", y="Porcentaje", hue="Resultado", marker="o",
-        palette=palette, ax=ax1
-    )
-
-    ax1.set_ylabel("Porcentaje de estudiantes (%)")
-    ax1.set_xlabel("Año")
-    ax1.set_ylim(0, 100)  # porcentajes de 0 a 100
-    ax1.grid(True)
-
-    # === Eje Y2: totales ===
-    ax2 = ax1.twinx()
-    sns.lineplot(
-        data=df_mat.drop_duplicates(['Año','Total']),
-        x="Año", y="Total", color="black", marker="s", linestyle="--", ax=ax2, label="Total"
-    )
-    ax2.set_ylabel("Total de estudiantes")
-
-    # Título
-    nombre = df_mat['Actividad_Nombre'].iloc[0]
-    plt.title(f"Evolución académica (porcentaje + total) - {nombre}")
-
-    # Manejo de leyendas (unir ambas)
-    handles1, labels1 = ax1.get_legend_handles_labels()
-    handles2, labels2 = ax2.get_legend_handles_labels()
-    ax1.legend(handles1 + handles2, labels1 + labels2, loc="upper left")
-
-    plt.show()
-    # (opcional guardar)
-    fig.savefig(f"evolucion_pct_total_{cod}.png", dpi=150, bbox_inches="tight")
-    plt.close()
+df_long = df_long[df_long['Valor'] == 1]
 
 
-# %%
 
 # Crear los datos organizados por año y nivel
 data = {
-    'Año': [
+    'Año_nivel': [
         # 1er Año (6 materias)
         1, 1, 1, 1, 1, 1,
         # 2do Año (8 materias)
@@ -219,253 +130,315 @@ df_materias = df_materias[df_materias['Asignatura'] != ''].reset_index(drop=True
 # Mostrar el DataFrame
 # print(df_materias)
 
-# %% Análisis por año de la carrera
-
-# Primero, unimos la información del año de la carrera al dataframe principal
-df_con_año = df.merge(df_materias[['Asignatura', 'Año']], 
-                     left_on='Actividad_Nombre', 
-                     right_on='Asignatura',
-                     how='left')
-
-# Verificamos el resultado
-print(f"Filas en df original: {len(df)}")
-print(f"Filas después del merge: {len(df_con_año)}")
-print(f"Materias sin año asignado: {df_con_año['Año'].isna().sum()}")
-
-# Mostramos las materias que no encontraron coincidencia
-if df_con_año['Año'].isna().sum() > 0:
-    print("\nMaterias sin año asignado:")
-    print(df_con_año[df_con_año['Año'].isna()]['Actividad_Nombre'].unique())
-    
-    
-# Preparamos los datos para el análisis por año de carrera
-años_carrera = sorted(df_con_año['Año'].dropna().unique())
-
-# Procesamos los datos para tener la misma estructura que antes pero por año de carrera
-df_por_año = pd.DataFrame()
-
-for año in años_carrera:
-    df_año = df_con_año[df_con_año['Año'] == año]
-    
-    # Sumamos los resultados por año académico para todas las materias de ese año de carrera
-    for año_academico in range(2017, 2025):
-        aprobados = df_año[f'{año_academico}_Aprobado'].sum()
-        reprobados = df_año[f'{año_academico}_Reprobado'].sum()
-        promovidos = df_año[f'{año_academico}_Promovido'].sum()
-        ausentes = df_año[f'{año_academico}_Ausente'].sum() if f'{año_academico}_Ausente' in df_año.columns else 0
-        
-        temp_df = pd.DataFrame({
-            'Año': [año],
-            'Año_Academico': [año_academico],
-            'Aprobado': [aprobados],
-            'Reprobado': [reprobados],
-            'Promovido': [promovidos],
-            'Ausente': [ausentes]
-        })
-        
-        df_por_año = pd.concat([df_por_año, temp_df], ignore_index=True)
-
-# Pasamos a formato largo
-df_plot_long_año = df_por_año.melt(
-    id_vars=['Año', 'Año_Academico'],
-    value_vars=['Aprobado', 'Reprobado', 'Promovido', 'Ausente'],
-    var_name="Resultado",
-    value_name="Cantidad"
+# === 1. Unir df_long con df_materias ===
+df_con_año = df_long.merge(
+    df_materias[['Asignatura', 'Año_nivel']],
+    left_on="Actividad_Nombre",
+    right_on="Asignatura",
+    how="left"
 )
 
-# Calcular totales por año de carrera y año académico
-totales_año = df_plot_long_año.groupby(['Año', 'Año_Academico'])['Cantidad'].sum().reset_index(name='Total')
-
-# Unir los totales al dataset largo
-df_plot_long_año = df_plot_long_año.merge(totales_año, on=['Año', 'Año_Academico'])
-
-# Calcular porcentaje
-df_plot_long_año['Porcentaje'] = (df_plot_long_año['Cantidad'] / df_plot_long_año['Total']) * 100
-
-# Colores fijos para los resultados
-palette = {
-    "Aprobado": "green",
-    "Reprobado": "red",
-    "Promovido": "blue",
-    "Ausente": "gray"
-}
-
-# Generar gráficos por año de carrera
-for año_carrera in años_carrera:
-    df_año_carrera = df_plot_long_año[df_plot_long_año['Año'] == año_carrera]
-
-    fig, ax1 = plt.subplots(figsize=(10, 6))
-
-    # === Eje Y1: porcentajes ===
-    sns.lineplot(
-        data=df_año_carrera,
-        x="Año_Academico", y="Porcentaje", hue="Resultado", marker="o",
-        palette=palette, ax=ax1
-    )
-
-    ax1.set_ylabel("Porcentaje de estudiantes (%)")
-    ax1.set_xlabel("Año Académico")
-    ax1.set_ylim(0, 100)
-    ax1.grid(True)
-    ax1.set_xticks(range(2017, 2025))
-
-    # === Eje Y2: totales ===
-    ax2 = ax1.twinx()
-    sns.lineplot(
-        data=df_año_carrera.drop_duplicates(['Año_Academico', 'Total']),
-        x="Año_Academico", y="Total", color="black", marker="s", 
-        linestyle="--", ax=ax2, label="Total"
-    )
-    ax2.set_ylabel("Total de estudiantes")
-
-    # Título
-    plt.title(f"Evolución académica - Año {int(año_carrera)} de la carrera\n"
-              f"(Porcentaje por resultado + total de estudiantes)")
-
-    # Manejo de leyendas
-    handles1, labels1 = ax1.get_legend_handles_labels()
-    handles2, labels2 = ax2.get_legend_handles_labels()
-    ax1.legend(handles1 + handles2, labels1 + labels2, loc="best")
-
-    plt.tight_layout()
-    plt.show()
-    
-    # Guardar gráfico
-    fig.savefig(f"evolucion_año_carrera_{int(año_carrera)}.png", dpi=150, bbox_inches="tight")
-    plt.close()
-
-# También podemos hacer un análisis comparativo entre años de carrera
-print("\nResumen estadístico por año de carrera:")
-resumen_años = df_plot_long_año.groupby(['Año', 'Resultado'])['Cantidad'].sum().unstack()
-print(resumen_años)
-
-# Porcentajes promedio por año de carrera
-print("\nPorcentajes promedio por año de carrera:")
-porcentajes_promedio = df_plot_long_año.groupby(['Año', 'Resultado'])['Porcentaje'].mean().unstack()
-print(porcentajes_promedio.round(2))
+df_con_año = df_con_año[['Actividad_Cod', 'Actividad_Nombre', 'Año_nivel', 'Alumno_Cod', 'Legajo', 'ApellidoNombre', 'DNI', 'Año', 'Resultado']]
 
 
+# === 5. Guardar limpio (opcional) ===
+df_con_año.to_excel("data_estudiantes_limpio_largo_con_nivel.xlsx", index=False)
 
 
 # %%
 
+df_long = pd.read_excel("data_estudiantes_limpio_largo_con_nivel.xlsx")
 
+# %% Análisis de resultado por materia de 2017 a 2024
 
-# Función para convertir Si/No a 1/0
-def convertir_si_no(valor):
-    if pd.isna(valor):
-        return 0
-    elif valor == 'Si':
-        return 1
-    else:
-        return 0
+# Configurar estilo de los gráficos
+plt.style.use('default')
+sns.set_palette("deep")
 
-# Procesamos los datos para tener la misma estructura que antes pero por año de carrera
-df_por_año = pd.DataFrame()
+# Colores fijos para los resultados
+palette = {
+    "Aprobado": "#2ecc71",  # verde
+    "Reprobado": "#e74c3c",  # rojo
+    "Promovido": "#3498db",  # azul
+    "Ausente": "#95a5a6"    # gris
+}
 
-for año in años_carrera:
-    df_año = df_con_año[df_con_año['Año_Carrera'] == año]
+# Procesar los datos para el análisis
+print("Procesando datos...")
+
+# Calcular conteos por materia, año y resultado
+df_counts = df_long.groupby(['Actividad_Cod', 'Actividad_Nombre', 'Año_nivel', 'Año', 'Resultado']).size().reset_index(name='Cantidad')
+
+# Calcular totales por materia y año
+df_totales = df_long.groupby(['Actividad_Cod', 'Año']).size().reset_index(name='Total')
+
+# Unir los totales al dataset de conteos
+df_analysis = df_counts.merge(df_totales, on=['Actividad_Cod', 'Año'])
+
+# Calcular porcentajes
+df_analysis['Porcentaje'] = (df_analysis['Cantidad'] / df_analysis['Total']) * 100
+
+# Obtener lista única de materias con su información completa
+materias_info = df_analysis[['Actividad_Cod', 'Actividad_Nombre', 'Año_nivel']].drop_duplicates()
+
+print(f"Total de materias a analizar: {len(materias_info)}")
+
+# Generar gráficos por materia
+for _, materia in materias_info.iterrows():
+    cod = materia['Actividad_Cod']
+    nombre = materia['Actividad_Nombre']
+    año_nivel = materia['Año_nivel']
     
-    # Sumamos los resultados por año académico para todas las materias de ese año de carrera
-    for año_academico in range(2017, 2025):
-        # Convertimos las columnas a valores numéricos
-        col_aprobado = f'{año_academico}_Aprobado'
-        col_reprobado = f'{año_academico}_Reprobado'
-        col_promovido = f'{año_academico}_Promovido'
-        
-        # Aseguramos que las columnas existan
-        if col_aprobado in df_año.columns:
-            aprobados = df_año[col_aprobado].apply(convertir_si_no).sum()
-        else:
-            aprobados = 0
-            
-        if col_reprobado in df_año.columns:
-            reprobados = df_año[col_reprobado].apply(convertir_si_no).sum()
-        else:
-            reprobados = 0
-            
-        if col_promovido in df_año.columns:
-            promovidos = df_año[col_promovido].apply(convertir_si_no).sum()
-        else:
-            promovidos = 0
-        
-        # Para ausentes, verificamos si la columna existe
-        col_ausente = f'{año_academico}_Ausente'
-        if col_ausente in df_año.columns:
-            ausentes = df_año[col_ausente].apply(convertir_si_no).sum()
-        else:
-            ausentes = 0
-        
-        temp_df = pd.DataFrame({
-            'Año_Carrera': [año],
-            'Año_Academico': [año_academico],
-            'Aprobado': [aprobados],
-            'Reprobado': [reprobados],
-            'Promovido': [promovidos],
-            'Ausente': [ausentes]
-        })
-        
-        df_por_año = pd.concat([df_por_año, temp_df], ignore_index=True)
-
-# También podemos hacer una versión más eficiente usando apply en todo el dataframe
-# Alternativa más eficiente:
-def procesar_año_academico(df_grupo, año_academico):
-    """Procesa un año académico específico para un grupo de materias"""
-    resultados = {}
+    # Filtrar datos para esta materia
+    df_mat = df_analysis[df_analysis['Actividad_Cod'] == cod]
     
-    for resultado in ['Aprobado', 'Reprobado', 'Promovido', 'Ausente']:
-        col_name = f'{año_academico}_{resultado}'
-        if col_name in df_grupo.columns:
-            resultados[resultado] = df_grupo[col_name].apply(convertir_si_no).sum()
-        else:
-            resultados[resultado] = 0
+    # Crear figura con dos ejes Y
+    fig, ax1 = plt.subplots(figsize=(14, 8))
     
-    return resultados
-
-# O usando una versión vectorizada (más rápida para grandes datasets):
-def convertir_columna_vectorizada(columna):
-    """Versión vectorizada para convertir Si/No a 1/0"""
-    if columna.dtype == 'object':  # Si es string
-        return (columna == 'Si').fillna(False).astype(int)
-    else:  # Si ya es numérico o tiene NaN
-        return columna.fillna(0).astype(int)
-
-# Re-procesar con método vectorizado
-df_por_año = pd.DataFrame()
-
-for año in años_carrera:
-    df_año = df_con_año[df_con_año['Año_Carrera'] == año]
+    # === Eje Y1: Porcentajes ===
+    sns.lineplot(
+        data=df_mat,
+        x="Año", 
+        y="Porcentaje", 
+        hue="Resultado", 
+        marker="o",
+        markersize=8,
+        linewidth=2.5,
+        palette=palette, 
+        ax=ax1
+    )
     
-    for año_academico in range(2017, 2025):
-        resultados = {}
-        
-        for resultado in ['Aprobado', 'Reprobado', 'Promovido']:
-            col_name = f'{año_academico}_{resultado}'
-            if col_name in df_año.columns:
-                resultados[resultado] = convertir_columna_vectorizada(df_año[col_name]).sum()
-            else:
-                resultados[resultado] = 0
-        
-        # Ausente puede no existir para algunos años
-        col_ausente = f'{año_academico}_Ausente'
-        if col_ausente in df_año.columns:
-            resultados['Ausente'] = convertir_columna_vectorizada(df_año[col_ausente]).sum()
-        else:
-            resultados['Ausente'] = 0
-        
-        temp_df = pd.DataFrame({
-            'Año_Carrera': [año],
-            'Año_Academico': [año_academico],
-            **resultados
-        })
-        
-        df_por_año = pd.concat([df_por_año, temp_df], ignore_index=True)
+    ax1.set_ylabel("Porcentaje de estudiantes (%)", fontsize=12, fontweight='bold')
+    ax1.set_xlabel("Año Académico", fontsize=12, fontweight='bold')
+    ax1.set_ylim(0, 110)
+    ax1.grid(True, alpha=0.3)
+    
+    # Ajustar ticks del eje X según los años disponibles
+    años_disponibles = sorted(df_mat['Año'].unique())
+    ax1.set_xticks(años_disponibles)
+    ax1.tick_params(axis='both', which='major', labelsize=10)
+    
+    # === Eje Y2: Totales ===
+    ax2 = ax1.twinx()
+    
+    # Obtener datos únicos de totales por año
+    totales_unicos = df_mat.drop_duplicates(['Año', 'Total'])
+    
+    sns.lineplot(
+        data=totales_unicos,
+        x="Año", 
+        y="Total", 
+        color="black", 
+        marker="s", 
+        markersize=8,
+        linewidth=2.5,
+        linestyle="--", 
+        ax=ax2, 
+        label="Total de estudiantes"
+    )
+    
+    ax2.set_ylabel("Total de estudiantes", fontsize=12, fontweight='bold')
+    ax2.tick_params(axis='y', which='major', labelsize=10)
+    
+    # Título con información completa
+    titulo = f"Evolución del Rendimiento - Año {año_nivel} - {cod}\n{nombre}"
+    plt.title(titulo, fontsize=14, fontweight='bold', pad=20)
+    
+    # Unir leyendas de ambos ejes
+    handles1, labels1 = ax1.get_legend_handles_labels()
+    handles2, labels2 = ax2.get_legend_handles_labels()
+    
+    # Posicionar la leyenda fuera del gráfico
+    ax1.legend(handles1 + handles2, labels1 + labels2, 
+               loc='center left', 
+               bbox_to_anchor=(1.15, 0.5),
+               frameon=True,
+               fancybox=True,
+               shadow=True)
+    
+    # Ajustar layout
+    plt.tight_layout()
+    
+    # Crear nombre de archivo con la estructura solicitada
+    # Limpiar nombre para archivo (remover caracteres especiales)
+    nombre_limpio = "".join(c for c in nombre if c.isalnum() or c in (' ', '-', '_')).rstrip()
+    nombre_limpio = nombre_limpio.replace(' ', '_')[:50]  # Limitar longitud
+    
+    nombre_archivo = f"rendimiento_A{año_nivel}_{cod}_{nombre_limpio}.png"
+    
+    # Guardar gráfico con alta calidad
+    plt.savefig(nombre_archivo, dpi=150, bbox_inches='tight', facecolor='white')
+    print(f"Gráfico guardado: {nombre_archivo}")
+    
+    plt.close()
 
-# Verificamos los resultados
-print("Primeras filas del dataframe procesado:")
-print(df_por_año.head())
-print(f"\nTotal de registros: {len(df_por_año)}")
+# %%
 
-# Verificamos que no haya NaN en las sumas
-print("\nValores nulos por columna:")
-print(df_por_año.isnull().sum())
+
+# Enfoque correcto: Agrupar por año académico y calcular totales una vez
+print("Calculando resultados por año académico...")
+
+# Agrupar por año académico y resultado para obtener los conteos
+df_conteos_por_año = df_long.groupby(['Año', 'Resultado']).size().reset_index(name='Cantidad')
+
+# Calcular el total único por año académico (estudiantes únicos por año)
+total_por_año = df_long.groupby('Año')['Alumno_Cod'].count().reset_index(name='Total_Estudiantes')
+
+# Unir los totales
+df_resultados_año = df_conteos_por_año.merge(total_por_año, on='Año')
+
+# Calcular porcentajes
+df_resultados_año['Porcentaje'] = (df_resultados_año['Cantidad'] / df_resultados_año['Total_Estudiantes']) * 100
+
+print("Resultados por año académico:")
+print(df_resultados_año.head(20))
+
+# Verificar que los porcentajes sumen 100% por año
+print("\nVerificación - Suma de porcentajes por año:")
+for año, group in df_resultados_año.groupby('Año'):
+    suma_porcentajes = group['Porcentaje'].sum()
+    print(f"Año {año}: {suma_porcentajes:.2f}%")
+
+# Gráfico de resultados por año académico
+fig, ax = plt.subplots(figsize=(14, 8))
+
+# Pivotear para tener años como índice y resultados como columnas
+df_pivot = df_resultados_año.pivot(index='Año', columns='Resultado', values='Porcentaje').fillna(0)
+
+# Ordenar resultados consistentemente
+orden_resultados = ['Aprobado', 'Promovido', 'Reprobado', 'Ausente']
+for resultado in orden_resultados:
+    if resultado not in df_pivot.columns:
+        df_pivot[resultado] = 0
+
+df_pivot = df_pivot[orden_resultados]
+
+# Gráfico de barras apiladas
+df_pivot.plot(kind='bar', stacked=True, ax=ax, 
+              color=[palette[r] for r in orden_resultados],
+              edgecolor='white', linewidth=0.5)
+
+ax.set_title('Distribución de Resultados por Año Académico\n(Todos los años/niveles combinados)', 
+            fontsize=16, fontweight='bold', pad=20)
+ax.set_ylabel('Porcentaje de Estudiantes (%)')
+ax.set_xlabel('Año Académico')
+# ax.set_ylim(0, 100)
+ax.legend(title='Resultado', bbox_to_anchor=(1.05, 1), loc='upper left')
+ax.grid(True, alpha=0.3, axis='y')
+
+# Agregar valores en las barras
+for i, (año, row) in enumerate(df_pivot.iterrows()):
+    cumulative = 0
+    for resultado in orden_resultados:
+        value = row[resultado]
+        if value > 3:  # Solo mostrar valores significativos
+            ax.text(i, cumulative + value/2, f'{value:.1f}%', 
+                   ha='center', va='center', fontweight='bold', fontsize=9)
+        cumulative += value
+
+plt.tight_layout()
+plt.savefig("resultados_generales_por_año.png", dpi=150, bbox_inches='tight')
+plt.show()
+
+# Ahora, si queremos análisis por año/nivel pero con totales correctos
+print("\nCalculando resultados por año/nivel con totales correctos...")
+
+# Para cada año/nivel y año académico, calcular estudiantes únicos
+estudiantes_por_nivel_año = df_long.groupby(['Año_nivel', 'Año'])['Alumno_Cod'].count().reset_index(name='Total_Estudiantes')
+
+# Conteos por año/nivel, año académico y resultado
+conteos_por_nivel_año = df_long.groupby(['Año_nivel', 'Año', 'Resultado']).size().reset_index(name='Cantidad')
+
+# Unir totales
+df_nivel_año_correcto = conteos_por_nivel_año.merge(estudiantes_por_nivel_año, on=['Año_nivel', 'Año'])
+
+# Calcular porcentajes
+df_nivel_año_correcto['Porcentaje'] = (df_nivel_año_correcto['Cantidad'] / df_nivel_año_correcto['Total_Estudiantes']) * 100
+
+print("Resultados por año/nivel (corregido):")
+print(df_nivel_año_correcto.head(20))
+
+# Verificar sumas por año/nivel y año académico
+print("\nVerificación - Suma de porcentajes por año/nivel:")
+for (año_nivel, año), group in df_nivel_año_correcto.groupby(['Año_nivel', 'Año']):
+    suma_porcentajes = group['Porcentaje'].sum()
+    print(f"Año {año_nivel}, {año}: {suma_porcentajes:.2f}%")
+
+# Gráficos por año/nivel con datos corregidos
+for año_nivel in sorted(df_nivel_año_correcto['Año_nivel'].unique()):
+    df_nivel = df_nivel_año_correcto[df_nivel_año_correcto['Año_nivel'] == año_nivel]
+    
+    fig, ax = plt.subplots(figsize=(12, 8))
+    
+    # Pivotear datos
+    df_pivot_nivel = df_nivel.pivot(index='Año', columns='Resultado', values='Porcentaje').fillna(0)
+    
+    # Ordenar resultados
+    for resultado in orden_resultados:
+        if resultado not in df_pivot_nivel.columns:
+            df_pivot_nivel[resultado] = 0
+    
+    df_pivot_nivel = df_pivot_nivel[orden_resultados]
+    
+    # Gráfico de barras apiladas
+    df_pivot_nivel.plot(kind='bar', stacked=True, ax=ax, 
+                       color=[palette[r] for r in orden_resultados],
+                       edgecolor='white', linewidth=0.5)
+    
+    ax.set_title(f'Distribución de Resultados - Año {año_nivel} de Carrera\n(Con totales correctos - suma ~100%)', 
+                fontsize=14, fontweight='bold', pad=20)
+    ax.set_ylabel('Porcentaje de Estudiantes (%)')
+    ax.set_xlabel('Año Académico')
+    # ax.set_ylim(0, 100)
+    ax.legend(title='Resultado', bbox_to_anchor=(1.05, 1), loc='upper left')
+    ax.grid(True, alpha=0.3, axis='y')
+    
+    # Agregar valores
+    for i, (año, row) in enumerate(df_pivot_nivel.iterrows()):
+        cumulative = 0
+        for resultado in orden_resultados:
+            value = row[resultado]
+            if value > 3:
+                ax.text(i, cumulative + value/2, f'{value:.1f}%', 
+                       ha='center', va='center', fontweight='bold', fontsize=8)
+            cumulative += value
+    
+    plt.tight_layout()
+    plt.savefig(f"resultados_año_{año_nivel}_corregido.png", dpi=300, bbox_inches='tight')
+    plt.close()
+    print(f"Gráfico corregido guardado: resultados_año_{año_nivel}_corregido.png")
+
+# Análisis adicional: Evolución temporal por resultado
+fig, axes = plt.subplots(2, 2, figsize=(15, 10))
+axes = axes.flatten()
+
+for i, resultado in enumerate(orden_resultados):
+    df_resultado = df_resultados_año[df_resultados_año['Resultado'] == resultado]
+    
+    axes[i].plot(df_resultado['Año'], df_resultado['Porcentaje'], 
+                marker='o', linewidth=2, markersize=8, 
+                color=palette[resultado])
+    
+    axes[i].set_title(f'Evolución de {resultado}', fontweight='bold')
+    axes[i].set_xlabel('Año Académico')
+    axes[i].set_ylabel('Porcentaje (%)')
+    # axes[i].set_ylim(0, 100)
+    axes[i].grid(True, alpha=0.3)
+    
+    # Agregar valores en los puntos
+    for _, row in df_resultado.iterrows():
+        axes[i].text(row['Año'], row['Porcentaje'] + 2, f'{row["Porcentaje"]:.1f}%', 
+                    ha='center', va='bottom', fontweight='bold')
+
+plt.suptitle('Evolución Temporal de Cada Tipo de Resultado\n(Todos los años/niveles combinados)', 
+             fontsize=16, fontweight='bold', y=0.98)
+plt.tight_layout()
+plt.savefig('evolucion_resultados_por_tipo.png', dpi=150, bbox_inches='tight')
+plt.show()
+
+print("\n¡Análisis completado con éxito!")
+print("Ahora los porcentajes suman aproximadamente 100% para cada agrupación.")
+print("Archivos generados:")
+print("- resultados_generales_por_año.png")
+print("- resultados_año_X_corregido.png (para cada año/nivel)")
+print("- evolucion_resultados_por_tipo.png")
